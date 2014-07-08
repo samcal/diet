@@ -54,7 +54,11 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 func hn(w http.ResponseWriter, r *http.Request) {
   params := mux.Vars(r)
-  min_points, _ := strconv.Atoi(params["min_points"])
+  min_points, err := strconv.Atoi(params["min_points"])
+  if err != nil {
+    http.Error(w, "Provided min_points must be an integer", http.StatusBadRequest)
+    return
+  }
 
   resp, err := http.Get("https://news.ycombinator.com/rss")
   if err != nil {
@@ -62,7 +66,11 @@ func hn(w http.ResponseWriter, r *http.Request) {
     return
   }
   defer resp.Body.Close()
-  contents, _ := ioutil.ReadAll(resp.Body)
+  contents, err := ioutil.ReadAll(resp.Body)
+  if err != nil {
+    http.Error(w, "Error reading YC response", http.StatusInternalServerError)
+    return
+  }
 
   var i RSS
   err = xml.Unmarshal(contents, &i)
@@ -99,6 +107,10 @@ func hn(w http.ResponseWriter, r *http.Request) {
 
   i.Items.ItemList = validItems
 
-  data, _ := xml.MarshalIndent(i, "", "    ")
+  data, err := xml.MarshalIndent(i, "", "    ")
+  if err != nil {
+    http.Error(w, "Error expanding to XML: " + err.Error(), http.StatusInternalServerError)
+    return
+  }
   w.Write(data)
 }
