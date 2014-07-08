@@ -29,10 +29,17 @@ type Item struct {
   Comments string `xml:"comments"`
 }
 
+func xmlHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/xml")
+    fn(w, r)
+  }
+}
+
 func main() {
   r := mux.NewRouter()
   r.HandleFunc("/", home)
-  r.HandleFunc("/feeds/hn/{min_points:[0-9]+}", hn)
+  r.HandleFunc("/feeds/hn/{min_points:[0-9]+}", xmlHandler(hn))
 
   http.Handle("/", r)
 
