@@ -31,12 +31,17 @@ type Item struct {
 
 func main() {
   r := mux.NewRouter()
+  r.HandleFunc("/", home)
   r.HandleFunc("/feeds/hn/{min_points:[0-9]+}", hn)
 
   http.Handle("/", r)
 
   log.Println("Listening...")
   http.ListenAndServe(":3000", nil)
+}
+
+func home(w http.ResponseWriter, r *http.Request) {
+  w.Write([]byte("Hello!"))
 }
 
 func hn(w http.ResponseWriter, r *http.Request) {
