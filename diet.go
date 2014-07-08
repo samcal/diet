@@ -37,11 +37,12 @@ func xmlHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 }
 
 func main() {
-  r := mux.NewRouter()
-  r.HandleFunc("/", home)
-  r.HandleFunc("/feeds/hn/{min_points:[0-9]+}", xmlHandler(hn))
+  root := mux.NewRouter()
+  root.HandleFunc("/", home)
+  http.Handle("/", root)
 
-  http.Handle("/", r)
+  feeds := root.PathPrefix("/feeds").Subrouter()
+  feeds.HandleFunc("/hn/{min_points:[0-9]+}", xmlHandler(hn))
 
   log.Println("Listening...")
   http.ListenAndServe(":3000", nil)
