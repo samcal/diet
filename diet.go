@@ -55,23 +55,41 @@ func hn(w http.ResponseWriter, r *http.Request) {
   params := mux.Vars(r)
   min_points, _ := strconv.Atoi(params["min_points"])
 
-  resp, _ := http.Get("https://news.ycombinator.com/rss")
+  resp, err := http.Get("https://news.ycombinator.com/rss")
+  if err != nil {
+    http.Error(w, err.Error(), http.StatusBadGateway)
+    return
+  }
   defer resp.Body.Close()
   contents, _ := ioutil.ReadAll(resp.Body)
 
   var i RSS
-  err := xml.Unmarshal(contents, &i)
+  err = xml.Unmarshal(contents, &i)
   if err != nil {
+    http.Error(w, err.Error(), http.StatusInternalServerError)
+    return
   }
 
   var validItems []Item
   for _,item := range i.Items.ItemList {
-    resp, _ := http.Get(item.Comments)
+    resp, err = http.Get(item.Comments)
+    if err != nil {
+      http.Error(w, err.Error(), http.StatusBadGateway)
+      return
+    }
     defer resp.Body.Close()
-    html, _ := ioutil.ReadAll(resp.Body)
+    html, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+      http.Error(w, err.Error(), http.StatusInternalServerError)
+      return
+    }
     matches := pointsRegexp.FindStringSubmatch(string(html))
     if len(matches) >= 2 {
-      points, _ := strconv.Atoi(matches[1])
+      points, err := strconv.Atoi(matches[1])
+      if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+      }
       if points >= min_points {
         validItems = append(validItems, item)
       }
