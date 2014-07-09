@@ -1,6 +1,7 @@
-package main
+package diet
 
 import (
+	"errors"
 	"encoding/xml"
 	"io/ioutil"
 	"log"
@@ -12,23 +13,6 @@ import (
 )
 
 var pointsRegexp = regexp.MustCompile("(\\d+) points")
-
-type RSS struct {
-	XMLName xml.Name `xml:"rss"`
-	Items   Items    `xml:"channel"`
-}
-
-type Items struct {
-	XMLName  xml.Name `xml:"channel"`
-	ItemList []Item   `xml:"item"`
-}
-
-type Item struct {
-	Title       string `xml:"title"`
-	Link        string `xml:"link"`
-	Description string `xml:"description"`
-	Comments    string `xml:"comments"`
-}
 
 func xmlHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -53,42 +37,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello!"))
 }
 
-func checkPoints(sc chan Item, fc chan bool, item Item, minPoints int) {
-	response, error := http.Get(item.Comments)
-	if error != nil {
-		// http.Error(w, error.Error(), http.StatusBadGateway)
-		fc <- false
-		return
-	}
-	defer response.Body.Close()
-
-	html, error := ioutil.ReadAll(response.Body)
-	if error != nil {
-		// http.Error(w, error.Error(), http.StatusInternalServerError)
-		fc <- false
-		return
-	}
-
-	matches := pointsRegexp.FindStringSubmatch(string(html))
-
-	if len(matches) >= 2 {
-		points, error := strconv.Atoi(matches[1])
-		if error != nil {
-			// 	http.Error(w, error.Error(), http.StatusInternalServerError)
-			fc <- false
-			return
-		}
-
-		if points >= minPoints {
-			sc <- item
-		} else {
-			fc <- false
-		}
-	} else {
-		fc <- false
-	}
-}
-
 func hn(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	min_points, err := strconv.Atoi(params["min_points"])
@@ -97,47 +45,34 @@ func hn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := http.Get("https://news.ycombinator.com/rss")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	contents, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Error reading YC response", http.StatusInternalServerError)
-		return
-	}
-
-	var i RSS
-	err = xml.Unmarshal(contents, &i)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var validItems []Item
-	var sc = make(chan Item)
-	var fc = make(chan bool)
-
-	for _, item := range i.Items.ItemList {
-		go checkPoints(sc, fc, item, min_points)
-	}
-
-	var s int
-	for s < len(i.Items.ItemList) {
-
-		select {
-		case item := <-sc:
-			validItems = append(validItems, item)
-		case <-fc:
-			// pass
+	i, err := filterXml("https://news.ycombinator.com/rss", func(item Item) (bool, error) {
+		resp, err := http.Get(item.Comments)
+		if err != nil {
+			return false, err
 		}
 
-		s++
-	}
+		defer resp.Body.Close()
+		html, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return false, err
+		}
 
-	i.Items.ItemList = validItems
+		matches := pointsRegexp.FindStringSubmatch(string(html))
+		if len(matches) >= 2 {
+			points, err := strconv.Atoi(matches[1])
+			if err != nil {
+				return false, err
+			}
+
+			if points >= min_points {
+				return true, nil
+			} else {
+				return false, nil
+			}
+		} else {
+			return false, errors.New("No text matched the points regex")
+		}
+	})
 
 	data, err := xml.MarshalIndent(i, "", "    ")
 	if err != nil {
